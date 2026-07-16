@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="dawn" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f6bd63"/>
+      <stop offset="0.5" stop-color="#ea8a34"/>
+      <stop offset="1" stop-color="#db4d2c"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#1d1712"/>
+  <circle cx="32" cy="34" r="15" fill="url(#dawn)"/>
+  <g stroke="url(#dawn)" stroke-width="3" stroke-linecap="round">
+    <line x1="32" y1="8" x2="32" y2="14"/>
+    <line x1="12" y1="34" x2="6" y2="34"/>
+    <line x1="52" y1="34" x2="58" y2="34"/>
+    <line x1="16" y1="18" x2="12" y2="14"/>
+    <line x1="48" y1="18" x2="52" y2="14"/>
+  </g>
+</svg>
