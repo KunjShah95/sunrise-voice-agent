@@ -56,6 +56,7 @@ export default function Home() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const endPollsRef = useRef(0);
 
   useEffect(() => {
     fetch("/api/config")
@@ -85,9 +86,26 @@ export default function Home() {
           const d: CallState = await r.json();
           if (!r.ok) return;
           setCall(d);
+
           if (d.status === "ended" || d.status === "failed") {
-            stopPolling();
+            // Call is over — but Vapi finalizes the cost + transcript + analysis
+            // a few seconds AFTER the status flips to "ended". Unlock the UI now,
+            // but keep polling until the real cost/analysis land (or we give up),
+            // otherwise the cost reads ₹0 and fields come back empty.
             setCalling(false);
+            if (timerRef.current) {
+              clearInterval(timerRef.current);
+              timerRef.current = null;
+            }
+            endPollsRef.current += 1;
+
+            const haveCost =
+              typeof d.costUsd === "number" && d.costUsd > 0;
+            const haveReport = !!(d.transcript || d.summary || d.structured);
+
+            if ((haveCost && haveReport) || endPollsRef.current >= 12) {
+              stopPolling();
+            }
           }
         } catch {
           /* transient — keep polling */
@@ -102,6 +120,7 @@ export default function Home() {
     setCall(null);
     setElapsed(0);
     setCalling(true);
+    endPollsRef.current = 0;
 
     try {
       const res = await fetch("/api/call", {

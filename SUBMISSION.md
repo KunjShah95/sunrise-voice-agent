@@ -8,8 +8,8 @@
 
 | # | Deliverable | Link / Location |
 |---|---|---|
-| 1 | **Live URL** | https://sunrise-voice-agent.vercel.app |
-| 2 | **GitHub (public)** | https://github.com/KunjShah95/sunrise-voice-agent |
+| 1 | **Live URL** | <https://sunrise-voice-agent.vercel.app> |
+| 2 | **GitHub (public)** | <https://github.com/KunjShah95/sunrise-voice-agent> |
 | 3 | **README.md** | in repo — run steps, architecture diagram, cost/call |
 | 4 | **DECISIONS.md** | in repo — platform comparison, latency, regulatory, roadmap |
 | 5 | **Loom (≤3 min)** | _[paste Loom link]_ |
@@ -31,6 +31,7 @@ the lower-cost, DLT-compliant India path.
 ## Requirements checklist
 
 **P0**
+
 - [x] Public deployed URL (not localhost)
 - [x] One button → real outbound call to a real Indian mobile
 - [x] Call arrives in ~10–15 s of click
@@ -45,6 +46,7 @@ the lower-cost, DLT-compliant India path.
 - [ ] One recorded successful call — _attached separately_
 
 **P1**
+
 - [x] Transcript displayed after the call
 - [x] Qualification (need / urgency / booking) extracted as structured fields
 - [x] Cost of the call shown in ₹
@@ -54,8 +56,8 @@ the lower-cost, DLT-compliant India path.
 
 ## Known limitation (disclosed up front)
 
-Telephony is on **Twilio's free trial**, which (a) prepends a spoken *"you have a
-trial account, press any key"* message before the AI connects, and (b) only dials
+Telephony is on **Twilio's free trial**, which (a) prepends a spoken _"you have a
+trial account, press any key"_ message before the AI connects, and (b) only dials
 **Twilio-verified** numbers. Both are trial artifacts, not app behaviour.
 
 - Removing the preamble needs a paid Twilio balance (~₹1700, **above the ₹500 budget**)
@@ -79,7 +81,7 @@ line; the AI (Ria) then takes over.
 ## The one thing I'm least happy with
 
 The **Twilio trial preamble + foreign (US) caller-ID**. It's the single thing that
-most hurts the live-demo feel, and it's *exactly* the "a US stack is quietly wrong for
+most hurts the live-demo feel, and it's _exactly_ the "a US stack is quietly wrong for
 an Indian number" lesson the brief points at. The honest fix is the **Bolna + Exotel/
 Plivo** path — real Indian caller-ID, ~half the per-minute cost, and the only route
 that can register on India's DLT platform for real customers. I built that adapter so
@@ -92,7 +94,7 @@ same-day window — so tonight's demo ships on Vapi + Twilio with the limitation
 
 > Hi — heads-up before you test the voice-agent demo. It's live and works end-to-end:
 > real call to an Indian mobile, Hinglish conversation, qualification + booking, and
-> transcript + ₹ cost on the page. Live URL: https://sunrise-voice-agent.vercel.app
+> transcript + ₹ cost on the page. Live URL: <https://sunrise-voice-agent.vercel.app>
 >
 > **Two asks:**
 >
@@ -101,8 +103,8 @@ same-day window — so tonight's demo ships on Vapi + Twilio with the limitation
 > number). Send me the exact +91 number(s) you'll use and I'll add them to the
 > allowlist and verify them on Twilio, so the button rings your phone during the demo.
 >
-> **2. Telephony is on Twilio's free trial**, which plays a ~5-second *"trial account,
-> press any key"* message before the AI connects and only dials verified numbers — a
+> **2. Telephony is on Twilio's free trial**, which plays a ~5-second _"trial account,
+> press any key"_ message before the AI connects and only dials verified numbers — a
 > trial artifact, not the app. Removing it needs either a Twilio top-up (~₹1700, above
 > the ₹500 budget) or an Indian provider (Exotel/Plivo/Bolna) whose DLT/KYC won't clear
 > today. Do you want to **(a)** approve the ~₹1700 top-up / an alternate provider for a
