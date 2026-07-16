@@ -22,7 +22,8 @@ A LEAD just filled an enquiry form on our website/ad about getting their new fla
 
 # HOW YOU TALK (most important)
 - Sound like a real, warm Bengaluru-based person on the phone — NOT a call-centre script, NOT a robot.
-- MIRROR the caller's language. English -> reply in natural Indian English. Hindi -> reply in Hindi. Hinglish -> reply in Hinglish. They will code-switch mid-sentence; follow them smoothly.
+- DEFAULT to natural Hinglish (mostly Hindi with everyday English words mixed in) from your very first line — this is a Bengaluru call. Only switch to pure English if the caller clearly speaks only English and seems to prefer it.
+- MIRROR the caller's language. English -> Indian English. Hindi -> Hindi. Hinglish -> Hinglish. They will code-switch mid-sentence; follow them smoothly.
 - Keep EVERY reply to 1–2 short sentences. Speak in a friendly, casual tone. Use small natural fillers ("acha", "sure", "got it", "haan").
 - One question at a time. Never stack two questions. Never monologue.
 - Say numbers/dates the way people speak them ("Thursday, 4 PM").
@@ -53,23 +54,26 @@ A LEAD just filled an enquiry form on our website/ad about getting their new fla
 When the booking is confirmed, or the person wants to end: give a short warm goodbye and then END THE CALL immediately. No dead air, no lingering.`;
 
 const FIRST_MESSAGE =
-  "Hi! This is Ria, an AI assistant calling from Sunrise Interiors in Bengaluru. Am I speaking with the right person about the interior enquiry you filled for your flat — and is this a good time to talk?";
+  "Hello ji! Main Ria bol rahi hoon, Sunrise Interiors Bengaluru se — aur haan, main ek AI assistant hoon. Kya main sahi vyakti se baat kar rahi hoon jinhone apne flat ke interiors ke liye enquiry ki thi? Abhi baat karne ka theek time hai?";
 
-// Voice selection. Best Hinglish -> Sarvam (India-native, needs a Sarvam key
-// added in Vapi). Zero-extra-setup fallback -> 11labs (bundled with Vapi).
-// Smallest.ai is a cheap, low-latency Indian option.
+// Voice selection — must be a provider Vapi supports (NOTE: Sarvam is NOT a
+// Vapi voice provider; it's available on the Bolna path instead).
+// Indian-capable Vapi options: 11labs (bundled, pick an Indian voice id),
+// azure (en-IN-NeerjaNeural / hi-IN-SwaraNeural), smallest-ai (Indian, low-latency).
 function buildVoice(): Record<string, unknown> {
   const provider = (process.env.VOICE_PROVIDER_NAME || "11labs").toLowerCase();
   const voiceId = process.env.VOICE_ID;
 
-  if (provider === "sarvam") {
-    // Sarvam speakers: anushka, meera, pavithra, arvind... ; bulbul TTS model.
-    return { provider: "sarvam", voiceId: voiceId || "anushka", model: "bulbul:v2" };
+  if (provider === "smallest-ai" || provider === "smallest") {
+    const v: Record<string, unknown> = { provider: "smallest-ai" };
+    if (voiceId) v.voiceId = voiceId;
+    return v;
   }
-  if (provider === "smallest") {
-    return { provider: "smallest", voiceId: voiceId || "arnav" };
+  if (provider === "azure") {
+    return { provider: "azure", voiceId: voiceId || "en-IN-NeerjaNeural" };
   }
-  // 11labs turbo multilingual handles Indian-accented Hindi/English.
+  // Default: 11labs turbo (bundled). Set VOICE_ID to an Indian 11labs voice
+  // (Vapi dashboard -> Voice Library -> filter Indian -> copy the id).
   const v: Record<string, unknown> = { provider: "11labs", model: "eleven_turbo_v2_5" };
   if (voiceId) v.voiceId = voiceId;
   return v;
