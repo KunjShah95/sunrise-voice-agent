@@ -36,7 +36,7 @@ outbound-call API):
 
 | Platform | Origin | Outbound API | Indian voice / Hinglish | Telephony options | Est. all-in /min to an Indian mobile¹ | Barge-in | Free credit |
 |---|---|---|---|---|---|---|---|
-| **Vapi** ✅ chosen | US | Yes, `POST /call` | Good (Deepgram `multi` + 11labs/Sarvam) | BYO Twilio/Vonage/Telnyx | **≈ ₹18–24** (Twilio-to-India is the costly part) | Native | ~$10 |
+| **Vapi** ✅ chosen | US | Yes, `POST /call` | Good (Deepgram `multi` + Azure `hi-IN` / 11labs / smallest-ai) | BYO Twilio/Vonage/Telnyx | **≈ ₹18–24** (Twilio-to-India is the costly part) | Native | ~$10 |
 | **Bolna** ✅ built as 2nd | India (Bengaluru) | Yes | **Best** (Sarvam/Smallest, India-tuned) | **Plivo / Exotel / Twilio** | **≈ ₹9–14** (Plivo/Exotel termination) | Native | trial credit |
 | Retell AI | US | Yes | Good | BYO Twilio/Telnyx | ≈ ₹18–24 | Native | ~$10 |
 | Bland AI | US | Yes (single API) | Weak-to-OK Indian voices | Bundled (their numbers) | ≈ ₹8–12² | Yes | trial mins |
@@ -65,7 +65,9 @@ Hinglish quality are weaker, and it's a closed box — no Indian-DLT path.
 - **Latency + barge-in are solved for me** — Deepgram streaming STT,
   `gpt-4o-mini`, and 11labs `turbo` are wired for ~sub-second turns out of the box.
 - **Hinglish is good enough**: Deepgram `multi` transcribes Hindi+English
-  code-switching; the voice speaks Indian-accented output.
+  code-switching; **Azure `hi-IN-SwaraNeural`** speaks Hindi + English words in
+  an Indian voice. The agent is prompted to *default* to Hinglish (not just
+  mirror), so the accent lands from the first line.
 
 **What I gave up by choosing it (honest tradeoffs):**
 - **It is not the lowest-cost stack.** Twilio's international termination to an
@@ -79,6 +81,23 @@ Hinglish quality are weaker, and it's a closed box — no Indian-DLT path.
 - **No native Indian-DLT path.** Twilio can't register on India's DLT platform
   the way Exotel/Ozonetel/Plivo (India) can — so this exact stack cannot legally
   scale to non-consented customers (see §5).
+
+**Two things I learned the hard way during the build (they prove the thesis that
+a US stack is quietly wrong for India):**
+- **Vapi does not support Sarvam as a voice provider.** I assumed it would (Sarvam
+  is the obvious best-Hinglish choice) — it isn't in Vapi's list. Vapi's
+  Indian-capable voices are **Azure** (`hi-IN-SwaraNeural` / `en-IN-NeerjaNeural`,
+  bundled), **smallest-ai**, or an Indian **11labs** voice. I shipped Azure
+  `hi-IN-SwaraNeural`. Sarvam's superior Hinglish is reachable only on the
+  **Bolna** path — another reason the India-native stack wins on quality too.
+- **Twilio's free trial injects a spoken "press any key" preamble** and only
+  dials *verified* numbers. Great as a free allowlist, terrible for a live client
+  demo — the client first hears a foreign-accented trial robot, which is exactly
+  the "voice sounds foreign → we lose" failure the brief warns about. Removing it
+  needs a paid Twilio balance (~₹1700, above the ₹500 budget → I flagged it to
+  you rather than silently overspending) or an Indian provider (Exotel/Plivo)
+  whose DLT/KYC doesn't clear same-day. This *is* the "US-stack-is-wrong-for-India"
+  lesson, encountered live.
 
 **Why I still built Bolna in the repo:** it's the India-correct answer on both
 axes the brief cares about (cost + regulatory). Having both behind one
@@ -118,8 +137,9 @@ is a one-line env change, not a rewrite.
 - **Streaming STT** (Deepgram `nova-2`, `language: multi`) — partials, not
   batch, so endpointing fires fast on Hinglish.
 - **Small, fast LLM** (`gpt-4o-mini`) — the dominant lever on time-to-first-token.
-- **Low-latency TTS** (11labs `eleven_turbo_v2_5`; Sarvam/Smallest as the
-  India-tuned upgrade) with streamed audio.
+- **Low-latency streamed TTS** — Azure `hi-IN-SwaraNeural` (bundled, Indian,
+  fast); `smallest-ai` is the lower-latency Indian upgrade if needed. (Sarvam,
+  the best-Hinglish option, is on the Bolna path — not available in Vapi.)
 - **Short system prompt + "one question at a time"** — fewer tokens generated
   per turn = less time-to-first-audio, and it keeps the call to 60–90 s.
 - **`silenceTimeoutSeconds` / endpointing tuned** so the agent doesn't wait too
