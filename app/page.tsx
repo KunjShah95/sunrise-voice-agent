@@ -29,24 +29,16 @@ interface CallState {
   costInr?: number;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  queued: "Dialing…",
-  ringing: "Ringing the phone…",
-  "in-progress": "Live — agent is talking",
-  ended: "Call ended",
+const STATE_LABEL: Record<string, string> = {
+  queued: "Dialing the lead",
+  ringing: "Ringing",
+  "in-progress": "Live — Ria is speaking",
+  ended: "Call complete",
   failed: "Call failed",
-  unknown: "…",
+  unknown: "Connecting",
 };
 
-function pillClass(s?: string) {
-  if (s === "in-progress") return "pill live";
-  if (s === "ringing" || s === "queued") return "pill ringing";
-  if (s === "ended") return "pill ended";
-  if (s === "failed") return "pill failed";
-  return "pill";
-}
-
-function YesNo({ value }: { value?: boolean }) {
+function SpecVal({ value }: { value?: boolean }) {
   if (value === undefined) return <span className="v">—</span>;
   return <span className={`v ${value ? "yes" : "no"}`}>{value ? "Yes" : "No"}</span>;
 }
@@ -65,7 +57,6 @@ export default function Home() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // load allowlist (masked) + provider
   useEffect(() => {
     fetch("/api/config")
       .then((r) => r.json())
@@ -119,19 +110,15 @@ export default function Home() {
         body: JSON.stringify({ index: selected }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to start call");
-      }
+      if (!res.ok) throw new Error(data.error || "Failed to start call");
 
       setCall({ id: data.callId, status: "queued" });
 
-      // elapsed timer
       const t0 = Date.now();
       timerRef.current = setInterval(
         () => setElapsed(Math.floor((Date.now() - t0) / 1000)),
         1000,
       );
-
       poll(data.callId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -141,177 +128,259 @@ export default function Home() {
   }
 
   const s = call?.structured;
-  const showResults =
-    call?.status === "ended" || call?.status === "failed";
+  const showResults = call?.status === "ended" || call?.status === "failed";
+  const live = call?.status === "in-progress";
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  const ss = String(elapsed % 60).padStart(2, "0");
 
   return (
-    <main className="wrap">
-      <div className="brand">
-        <span className="dot" />
-        Sunrise Interiors
-        <small>· Bengaluru</small>
-      </div>
+    <div className="frame">
+      <header className="topbar reveal d1">
+        <div className="mark">
+          <span className="sun" aria-hidden />
+          <div>
+            <div className="name">Sunrise Interiors</div>
+            <div className="place">Bengaluru · Interiors</div>
+          </div>
+        </div>
+        <span className="status-chip">
+          <span className="beat" />
+          Callback engine · live
+        </span>
+      </header>
 
-      <h1>Get a callback in seconds.</h1>
-      <p className="lede">
-        Click below and our AI design assistant will call the lead right now —
-        in Hindi, Hinglish or English — qualify the requirement, and book a
-        designer slot. Built for the live demo moment.
-      </p>
+      <section className="hero">
+        <div className="reveal d2">
+          <p className="eyebrow">The five-minute window</p>
+          <h1>
+            Call them back<br />
+            before they <em>cool.</em>
+          </h1>
+        </div>
+        <div className="reveal d3">
+          <p className="lede">
+            A lead just enquired about doing up their new flat. They&apos;re hot
+            for about five minutes — then they&apos;ve filled three
+            competitors&apos; forms too. <b>Whoever calls first usually wins.</b>
+          </p>
+          <div className="count">
+            Our AI designer-assistant dials back in
+            <strong>~10 seconds</strong>
+          </div>
+        </div>
+      </section>
 
       {!configured && (
-        <div className="error" style={{ marginBottom: 18 }}>
-          Server not configured yet. Set <code>ALLOWED_NUMBERS</code> and the
-          provider keys in your environment variables.
+        <div className="alert reveal d3">
+          Not configured yet — set <code>ALLOWED_NUMBERS</code> and the provider
+          keys in the environment.
         </div>
       )}
 
-      <div className="card">
-        <div className="row">
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <label className="field">Lead to call (allowlisted)</label>
-            <select
-              value={selected}
-              onChange={(e) => setSelected(Number(e.target.value))}
-              disabled={calling || numbers.length === 0}
-            >
-              {numbers.length === 0 && <option>No numbers configured</option>}
-              {numbers.map((n) => (
-                <option key={n.index} value={n.index}>
-                  {n.label} — {n.masked}
-                </option>
-              ))}
-            </select>
+      <section className="stage reveal d4">
+        <div className="console">
+          <div className="console-head">
+            <span className="tag">Callback console</span>
+            <span className="dots">
+              <i />
+              <i />
+              <i />
+            </span>
           </div>
-          <div style={{ alignSelf: "flex-end" }}>
+
+          <div className="console-body">
+            <label className="lbl" htmlFor="lead">
+              Lead on the allowlist
+            </label>
+            <div className="select-wrap">
+              <select
+                id="lead"
+                value={selected}
+                onChange={(e) => setSelected(Number(e.target.value))}
+                disabled={calling || numbers.length === 0}
+              >
+                {numbers.length === 0 && <option>No numbers configured</option>}
+                {numbers.map((n) => (
+                  <option key={n.index} value={n.index}>
+                    {n.label} — {n.masked}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <button
-              className="call"
+              className="dial"
               onClick={startCall}
               disabled={calling || numbers.length === 0}
             >
-              {calling ? "Calling…" : "📞 Call me now"}
+              {calling ? "Placing the callback…" : "Place the callback"}
+              {!calling && <span className="arrow">→</span>}
             </button>
+
+            <div className="guard">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M6 10V8a6 6 0 1 1 12 0v2m-9 0h6a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-4a3 3 0 0 1 3-3Z"
+                  stroke="#7a6f62"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span>
+                Dials <b>only</b> allowlisted numbers, enforced server-side. The
+                page picks an index — never a raw number
+                {provider && (
+                  <>
+                    {" · "}
+                    <b>{provider}</b>
+                  </>
+                )}
+                .
+              </span>
+            </div>
+
+            {call && (
+              <div className="live">
+                <div className="live-top">
+                  <span className="state" data-s={call.status}>
+                    <span className="led" />
+                    {STATE_LABEL[call.status] || call.status}
+                  </span>
+                  <span className="clock">
+                    {mm}:{ss}
+                  </span>
+                </div>
+
+                <div className={`wave ${live ? "on" : ""}`} aria-hidden>
+                  {Array.from({ length: 15 }).map((_, i) => (
+                    <i key={i} />
+                  ))}
+                </div>
+
+                {call.status === "queued" && (
+                  <p className="hint">
+                    Placing the call — the phone should ring within ~10 seconds.
+                  </p>
+                )}
+                {call.status === "failed" && call.endedReason && (
+                  <p className="hint">Reason: {call.endedReason}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
+      </section>
 
-        {provider && (
-          <div style={{ marginTop: 14 }}>
-            <span className="badge">provider: {provider}</span>{" "}
-            <span className="muted">
-              Numbers are enforced server-side. The page can only pick from the
-              allowlist — never a raw number.
-            </span>
+      {error && <div className="alert">{error}</div>}
+
+      <div className="results">
+        {showResults && s && (
+          <div className="panel">
+            <div className="panel-h">
+              <span className="t">Qualification</span>
+              <span className="n">auto-extracted</span>
+            </div>
+            <div className="panel-b">
+              <div className="spec">
+                <div className="row">
+                  <span className="k">Right person</span>
+                  <SpecVal value={s.caller_is_right_person} />
+                </div>
+                <div className="row">
+                  <span className="k">Interested</span>
+                  <SpecVal value={s.interested} />
+                </div>
+                <div className="row">
+                  <span className="k">Need</span>
+                  <span className="v">{s.need || "—"}</span>
+                </div>
+                <div className="row">
+                  <span className="k">Urgency</span>
+                  <span className="v">{s.urgency || "—"}</span>
+                </div>
+                <div className="row">
+                  <span className="k">Slot offered</span>
+                  <span className="v">{s.slot_offered || "—"}</span>
+                </div>
+                <div className="row">
+                  <span className="k">Slot confirmed</span>
+                  <SpecVal value={s.slot_confirmed} />
+                </div>
+                <div className="row">
+                  <span className="k">Language</span>
+                  <span className="v">{s.language || "—"}</span>
+                </div>
+              </div>
+
+              {s.slot_confirmed && s.slot_offered && (
+                <div style={{ marginTop: 20 }}>
+                  <span className="booking">📅 Booked — {s.slot_offered}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {showResults &&
+          (call?.costInr !== undefined || call?.costUsd !== undefined) && (
+            <div className="panel">
+              <div className="panel-h">
+                <span className="t">Cost of this call</span>
+                <span className="n">metered</span>
+              </div>
+              <div className="panel-b">
+                <div className="receipt">
+                  <div className="amt">
+                    {call?.costInr !== undefined ? (
+                      <>
+                        <span>₹</span>
+                        {call.costInr.toFixed(2)}
+                      </>
+                    ) : (
+                      `$${call?.costUsd?.toFixed(3)}`
+                    )}
+                  </div>
+                  {call?.costUsd !== undefined && (
+                    <div className="sub">
+                      ${call.costUsd.toFixed(3)} · billed by the provider,
+                      converted at the configured USD→INR rate
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+        {showResults && call?.summary && (
+          <div className="panel">
+            <div className="panel-h">
+              <span className="t">Summary</span>
+              <span className="n">post-call</span>
+            </div>
+            <div className="panel-b">
+              <p className="summary">{call.summary}</p>
+            </div>
+          </div>
+        )}
+
+        {showResults && call?.transcript && (
+          <div className="panel">
+            <div className="panel-h">
+              <span className="t">Transcript</span>
+              <span className="n">verbatim</span>
+            </div>
+            <div className="panel-b">
+              <div className="transcript">{call.transcript}</div>
+            </div>
           </div>
         )}
       </div>
 
-      {error && <div className="error">{error}</div>}
-
-      {call && (
-        <div className="card">
-          <div className="row">
-            <span className={pillClass(call.status)}>
-              <span className="led" />
-              {STATUS_LABEL[call.status] || call.status}
-            </span>
-            <span className="timer">
-              {String(Math.floor(elapsed / 60)).padStart(2, "0")}:
-              {String(elapsed % 60).padStart(2, "0")}
-            </span>
-          </div>
-          {call.status === "queued" && (
-            <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
-              Placing the call — the phone should ring within ~10 seconds.
-            </p>
-          )}
-          {call.endedReason && call.status === "failed" && (
-            <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
-              Reason: {call.endedReason}
-            </p>
-          )}
-        </div>
-      )}
-
-      {showResults && s && (
-        <div className="card">
-          <p className="section-title">Qualification (auto-extracted)</p>
-          <div className="grid">
-            <div className="kv">
-              <div className="k">Right person</div>
-              <YesNo value={s.caller_is_right_person} />
-            </div>
-            <div className="kv">
-              <div className="k">Interested</div>
-              <YesNo value={s.interested} />
-            </div>
-            <div className="kv">
-              <div className="k">Need</div>
-              <div className="v">{s.need || "—"}</div>
-            </div>
-            <div className="kv">
-              <div className="k">Urgency</div>
-              <div className="v">{s.urgency || "—"}</div>
-            </div>
-            <div className="kv">
-              <div className="k">Slot offered</div>
-              <div className="v">{s.slot_offered || "—"}</div>
-            </div>
-            <div className="kv">
-              <div className="k">Slot confirmed</div>
-              <YesNo value={s.slot_confirmed} />
-            </div>
-            <div className="kv">
-              <div className="k">Language</div>
-              <div className="v">{s.language || "—"}</div>
-            </div>
-            <div className="kv">
-              <div className="k">Booking</div>
-              <div className="v">
-                {s.slot_confirmed && s.slot_offered
-                  ? `📅 ${s.slot_offered}`
-                  : "Not booked"}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showResults && (call?.costInr !== undefined || call?.costUsd !== undefined) && (
-        <div className="card">
-          <p className="section-title">Cost of this call</p>
-          <div className="cost">
-            {call?.costInr !== undefined
-              ? `₹${call.costInr.toFixed(2)}`
-              : `$${call?.costUsd?.toFixed(3)}`}
-          </div>
-          {call?.costUsd !== undefined && (
-            <p className="muted" style={{ marginTop: 6 }}>
-              (${call.costUsd.toFixed(3)} · rate USD→INR{" "}
-              {process.env.NEXT_PUBLIC_USD_TO_INR || "≈86"})
-            </p>
-          )}
-        </div>
-      )}
-
-      {showResults && call?.summary && (
-        <div className="card">
-          <p className="section-title">Summary</p>
-          <p style={{ margin: 0 }}>{call.summary}</p>
-        </div>
-      )}
-
-      {showResults && call?.transcript && (
-        <div className="card">
-          <p className="section-title">Transcript</p>
-          <div className="transcript">{call.transcript}</div>
-        </div>
-      )}
-
-      <p className="foot">
+      <footer className="foot">
         This demo dials only consented, allowlisted numbers. Automated outbound
-        calls to Indian mobiles are regulated (TRAI/DLT) — see DECISIONS.md for
+        calls to Indian mobiles are regulated (TRAI / DLT) — see DECISIONS.md for
         what would change before real-customer use.
-      </p>
-    </main>
+      </footer>
+    </div>
   );
 }

@@ -1,9 +1,24 @@
 import type { Metadata } from "next";
+import { Fraunces, Instrument_Sans } from "next/font/google";
 import "./globals.css";
 
+const display = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-display",
+  style: ["normal", "italic"],
+  display: "swap",
+});
+
+const body = Instrument_Sans({
+  subsets: ["latin"],
+  variable: "--font-body",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "Sunrise Interiors — Instant Callback",
-  description: "AI voice agent calls the lead back within seconds.",
+  title: "Sunrise Interiors — The Callback Engine",
+  description:
+    "The lead is hot for five minutes. Sunrise Interiors calls back before they cool.",
 };
 
 export default function RootLayout({
@@ -12,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${display.variable} ${body.variable}`}>
       <body>{children}</body>
     </html>
   );
