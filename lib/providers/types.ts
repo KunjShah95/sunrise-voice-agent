@@ -19,11 +19,17 @@ export interface StructuredQualification {
   language?: string; // hindi | hinglish | english
 }
 
+export interface TranscriptTurn {
+  role: "assistant" | "user";
+  text: string;
+}
+
 export interface NormalizedCall {
   id: string;
   status: CallStatus;
   endedReason?: string;
-  transcript?: string;
+  transcript?: string; // flat fallback
+  turns?: TranscriptTurn[]; // preferred: speaker-separated
   summary?: string;
   structured?: StructuredQualification;
   costUsd?: number;

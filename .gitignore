@@ -30,3 +30,7 @@ yarn-error.log*
 *.tsbuildinfo
 
 .vercel
+
+# local debug artifacts
+.playwright-mcp/
+sunrise-redesign.png

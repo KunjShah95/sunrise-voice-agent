@@ -226,10 +226,146 @@ at the compliant stack.
 
 ---
 
-## 8. Measured (fill after the live demo call)
+## 8. Measured (live demo calls — Bolna, to a consented Indian mobile)
 
-- **Provider used for demo:** _[vapi | bolna]_
-- **Time from click → phone rings:** _[e.g. ~8 s]_
-- **Per-turn latency (measured):** _[e.g. ~1.1 s]_
-- **Call duration:** _[e.g. 78 s]_
-- **Cost of the call (from the on-page ₹ display):** _[e.g. ₹__]_
+Two live calls placed through the app to a real Jio/Airtel handset, read straight
+from Bolna's `GET /executions/{id}` (`total_cost`, `telephony_data.duration`):
+
+| Metric | Call A | Call B |
+|---|---|---|
+| **Provider** | Bolna (Sarvam voice + agent-default Indian number) | same |
+| **Duration** | 67 s | 58 s |
+| **Cost (`total_cost`, ₹)** | **₹3.75** | **₹2.50** |
+| **→ per-minute** | **≈ ₹3.36/min** | **≈ ₹2.59/min** |
+| **Turns captured** | 15 | 16 |
+| **Post-call extraction** | ok | ok (summary, 0.95 confidence) |
+| **Time from click → connected** | within the 10–15 s window (app measures `connectMs` live and prints "Connected in X.Xs") | same |
+
+**Cost breakdown (Call B), verbatim from Bolna:** `platform 2.0 + network 0.5 =
+2.5`, with `llm / synthesizer / transcriber = 0.0` on trial credit. So the
+measured **₹2.5–3.75/call (~₹2.6–3.4/min)** is real and on-page — **6–8× cheaper
+than the Vapi+Twilio international estimate (~₹18–24/min)**, and validates the
+whole thesis in §1 that the telephony leg, not the AI, is the cost.
+
+**Cost-unit gotcha (found live, worth recording):** Bolna's `total_cost` is
+already in **₹**, not USD. The adapter first (wrongly) multiplied by `USD_TO_INR`
+→ a call read ₹322 instead of ₹3.75. Fixed by treating `total_cost` as INR
+directly (`lib/providers/bolna.ts`). Exactly the "pricing pages lie by omission"
+trap the brief warns about — even the API's unit isn't labelled.
+
+**Booking works end-to-end:** Call B's agent qualified a full-setup 2BHK near
+Kanakpura and proposed *"Thursday 4 PM video call with a designer"* — captured in
+the on-page summary.
+
+---
+
+## 9. Demo dialing, transcript, humanization, and the ₹2/min path (added)
+
+**Demo dialing (`DEMO_MODE=1`).** For live testing in front of the client, the
+"Call my number" tab becomes a plain phone field that dials the number you type —
+no OTP, no `.env` allowlist edit. It's an **explicit, env-gated relaxation**:
+still E.164-validated and IP rate-limited, and OFF by default so a public deploy
+never becomes an open dialer. Production keeps the allowlist-index / OTP-token
+paths (the browser never sends a raw number there). Precedence in `/api/call`:
+demo-number (only if `DEMO_MODE`) → OTP token → allowlist index.
+
+**Speaker-turn transcript.** The transcript was a raw blob. `getCall()` now maps
+the provider message log into `turns: {role, text}[]` (Vapi `messages` /
+`artifact.messages`; Bolna transcript array; regex fallback on the flat string),
+rendered as Ria vs Customer chat bubbles. Reads like a conversation, not a dump.
+
+**Humanization + latency (Vapi assistant).** Added `startSpeakingPlan`
+(`smartEndpointingEnabled`, 0.4 s human beat), `stopSpeakingPlan` (barge-in on 1
+word), and `backgroundDenoisingEnabled`. Smart endpointing is also the
+"don't run STT/TTS continuously" control — audio becomes a turn only on real
+end-of-speech, not every fragment.
+
+**The ₹2/min question (researched).** Managed platforms can't hit ₹2/min — the
+platform fee alone is the problem (Vapi+Twilio ≈ ₹18–24; Bolna+Sarvam+Plivo ≈
+₹3–5). **True ~₹2/min requires self-hosting** (no platform fee):
+
+> Self-hosted **Pipecat / LiveKit Agents** + **Sarvam Saarika** STT (₹0.50/min) +
+> **Sarvam Bulbul V3** TTS (~₹0.70/min) + **gpt-4o-mini / Sarvam-M** (~₹0.20/min) +
+> **Plivo direct-SIP** (~₹0.60/min) ≈ **₹2.0/min** + minor GPU/compute, with
+> **Silero VAD** endpointing for turn-based (not continuous) STT/TTS.
+
+**Indian provider landscape (why Sarvam is the pick):** Sarvam **Bulbul V3** beat
+ElevenLabs v3-alpha/v2.5-flash and Cartesia Sonic-3 in the telephony category;
+self-serve, transparent INR pricing, sub-200ms. Open-weight upgrade path:
+**Maya Research Veena** (India's first Hindi/Hinglish TTS, sub-80ms on H100,
+Pipecat integration requested) and **Maya1** (20+ emotions, promptable voice —
+strong fit for a warm "Ria"); both Apache/open on Hugging Face → **₹0 TTS API
+fee, GPU-only** at scale. Also: AI4Bharat (Indic-TTS, Indic Parler-TTS),
+BharatGen, Svara-TTS (open). **Gnani** is best-in-class enterprise (sub-300ms,
+Vachana STT on 1M hrs) but **no self-serve / 3–6 month sales cycle** — the
+"when we're BFSI-scale" upgrade, not a demo choice.
+
+**Recommendation:** demo on Vapi (guaranteed) or Bolna+Sarvam (Indian, cheaper);
+migrate to self-hosted Sarvam+Pipecat+Plivo for the ₹2/min production target. The
+`VoiceProvider` interface makes each swap a one-file change.
+
+---
+
+## 10. UPDATE — Bolna is now the primary (live-verified), and why
+
+§3 chose Vapi as the *safe* default. After wiring Bolna end-to-end and placing
+**real calls** (see §8), the decision flipped: **Bolna is the primary provider
+(`VOICE_PROVIDER=bolna`)**, Vapi is the documented fallback. What changed my mind
+was evidence, not theory:
+
+- **It just works, cheaply.** ₹2.5–3.75/call (~₹2.6–3.4/min) measured, vs the
+  ~₹18–24/min Vapi+Twilio estimate. The brief says pick the lowest-cost one — I
+  did, and proved it on a live handset.
+- **No telephony KYC blocker for the demo.** Bolna places outbound calls using
+  the **agent's default number** — `BOLNA_FROM_NUMBER` can stay blank. So the
+  "Indian number needs DLT/KYC" wall (real for production, §5/§6) does **not**
+  block the demo. For production you buy a DLT-cleared Indian DID (Bolna →
+  Vobiz/Plivo, ~$5/mo) and set `BOLNA_FROM_NUMBER`.
+- **Indian voice + Hinglish is native** (Sarvam), and post-call extraction +
+  summary come back on Bolna's own `GET /executions/{id}`.
+
+**Cost is billed in ₹** (fixed — see §8). **Bolna's call API cannot override the
+agent prompt** per call (only `voice_id` + `user_data`), so the agent's prompt
+lives in the **Bolna dashboard**; the repo keeps the canonical copy in
+`lib/prompt.ts` and it must be pasted in once.
+
+**Transcript on Bolna.** Bolna returns the transcript as a **plain string**
+(`"assistant: …\nuser: …"`), not an array. Added `parseTranscriptString()` in
+`lib/providers/bolna.ts` → clean `turns[]` (multi-line replies merged), rendered
+as Ria/Customer bubbles. Summary is read from Bolna's nested
+`extracted_data.General["Call Summary"].subjective`.
+
+**Agent-behaviour fix (from a real failed call).** A live call had Ria repeat her
+greeting, attempt *"let me connect you to someone who speaks English,"* and skip
+the booking. Root cause was prompt gaps, so I hardened `lib/prompt.ts`: greet
+once, **never** transfer/hand off (she's fully bilingual and handles the whole
+call), and never re-ask an answered question. The next call ran clean and booked
+the slot. (Reminder: re-paste `lib/prompt.ts` into the Bolna agent after prompt
+changes, and remove any transfer node in the agent flow.)
+
+**Frontend: "call any number" for live client testing.** The brief's demo is
+run by *our* team on a video call, dialing the client's own phone — but we don't
+know that number in advance, so a static `.env` allowlist doesn't fit. The
+"Call my number" tab (`DEMO_MODE=1`) lets the operator **type any number and
+dial it**, gated by (a) **E.164 validation**, (b) **server-side IP rate-limit**,
+and (c) an explicit **consent checkbox** ("I have this person's consent to place
+an automated call"). The frontend never holds keys; the server places the call.
+
+> **Security note / automatic-fail boundary.** `DEMO_MODE` is an **operator
+> convenience for a supervised live demo**, not a public feature. On a public
+> deploy it would let any visitor dial any number — the brief's automatic fail.
+> **The deployed/graded URL runs with `DEMO_MODE` unset**, which re-enables the
+> allowlist-index / OTP-verified-token paths where the browser can never send a
+> raw number. Same code, one env var: convenience for us, safe for the public.
+> An OTP verify-then-call path (Twilio Verify, already wired) is the production
+> way to let a lead self-serve their own number without opening arbitrary dialing.
+
+**Net stack (as demoed):**
+
+| Layer | Choice |
+|---|---|
+| Orchestration + outbound call | **Bolna** (`POST /call`, agent-default Indian number) |
+| STT / LLM / TTS | **Sarvam** (Saarika + Bulbul), configured in the Bolna agent |
+| Voice | Indian, Hinglish, code-switching |
+| Frontend dial paths | allowlist index · OTP token · `DEMO_MODE` typed-number (consent-gated) |
+| Measured cost | **₹2.5–3.75/call (~₹2.6–3.4/min)** |

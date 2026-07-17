@@ -3,58 +3,59 @@ import type {
   NormalizedCall,
   CallStatus,
   StructuredQualification,
+  TranscriptTurn,
 } from "./types";
 
+import { SYSTEM_PROMPT, FIRST_MESSAGE } from "../prompt";
+
 const VAPI_BASE = "https://api.vapi.ai";
+
+// Map Vapi's message log into clean speaker turns (Ria vs Customer). Skips
+// system/tool rows. Falls back to parsing the flat transcript string.
+function buildTurns(c: any): TranscriptTurn[] | undefined {
+  const raw: any[] | undefined = Array.isArray(c.messages)
+    ? c.messages
+    : Array.isArray(c.artifact?.messages)
+      ? c.artifact.messages
+      : undefined;
+
+  if (raw && raw.length) {
+    const turns: TranscriptTurn[] = [];
+    for (const m of raw) {
+      const role = m.role;
+      if (role !== "user" && role !== "bot" && role !== "assistant") continue;
+      const text = (m.message ?? m.content ?? "").toString().trim();
+      if (!text) continue;
+      turns.push({ role: role === "user" ? "user" : "assistant", text });
+    }
+    if (turns.length) return turns;
+  }
+
+  // Fallback: flat "AI: ... \n User: ..." style transcript.
+  const flat: string | undefined = c.artifact?.transcript ?? c.transcript;
+  if (typeof flat === "string" && flat.includes("\n")) {
+    const turns: TranscriptTurn[] = [];
+    for (const line of flat.split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      const m = t.match(/^(AI|Assistant|Bot|Ria|User|Customer|Human)\s*[:\-]\s*(.+)$/i);
+      if (m) {
+        const isUser = /^(user|customer|human)$/i.test(m[1]);
+        turns.push({ role: isUser ? "user" : "assistant", text: m[2].trim() });
+      }
+    }
+    if (turns.length) return turns;
+  }
+  return undefined;
+}
 
 function usdToInr(usd: number): number {
   const rate = Number(process.env.USD_TO_INR || "86");
   return Math.round(usd * rate * 100) / 100;
 }
 
-// ---------------------------------------------------------------------------
-// The agent. Inline assistant => no dashboard setup required beyond keys.
-// Tuned for a 60–90s Indian outbound qualification call for Sunrise Interiors.
-// ---------------------------------------------------------------------------
-const SYSTEM_PROMPT = `You are "Ria", a warm, friendly AI voice assistant calling on behalf of Sunrise Interiors, a home interior design company in Bengaluru. You are on a LIVE phone call.
-
-A LEAD just filled an enquiry form on our website/ad about getting their new flat's interiors done. You are calling them back to qualify them and book a designer meeting. Be quick, human, and likeable.
-
-# HOW YOU TALK (most important)
-- Sound like a real, warm Bengaluru-based person on the phone — NOT a call-centre script, NOT a robot.
-- DEFAULT to natural Hinglish (mostly Hindi with everyday English words mixed in) from your very first line — this is a Bengaluru call. Only switch to pure English if the caller clearly speaks only English and seems to prefer it.
-- MIRROR the caller's language. English -> Indian English. Hindi -> Hindi. Hinglish -> Hinglish. They will code-switch mid-sentence; follow them smoothly.
-- Keep EVERY reply to 1–2 short sentences. Speak in a friendly, casual tone. Use small natural fillers ("acha", "sure", "got it", "haan").
-- One question at a time. Never stack two questions. Never monologue.
-- Say numbers/dates the way people speak them ("Thursday, 4 PM").
-
-# STYLE EXAMPLES (match this vibe — do not read these aloud verbatim)
-- Confirming: "Perfect. So just to understand — flat ke liye aap kaunsa interior work karana chahte ho? Full setup ya kuch specific?"
-- Urgency: "Got it. Aur aap start kab tak karna chahte ho — this month, ya thoda time hai?"
-- Booking: "Great, toh main aapke liye Thursday 4 PM pe ek quick video call set kar deti hoon with our designer — that works?"
-- Objection: "Bilkul samajh sakti hoon — aapne humaari website pe interior enquiry bhari thi, isliye call kiya. Aapki details safe hain, no worries."
-
-# CONVERSATION GOAL (in order — but adapt to their answers)
-1. You already greeted, named Sunrise Interiors, and said you're an AI assistant in your first line. Now confirm you're speaking to the right person and that it's an okay time.
-2. NEED: what interior work do they want for the flat?
-3. URGENCY: how soon do they want to start?
-4. BOOK: propose "a quick video call with one of our designers this Thursday at 4 PM" and confirm (offer one alternative if that doesn't suit).
-5. CLOSE: thank them, say a confirmation will come on WhatsApp/SMS, end cleanly.
-
-# HARD RULES
-- MAX 3–4 questions total. Whole call ~60–90 seconds. Do not interrogate.
-- "Who is this?" / "How did you get my number?": calmly say they filled an interior-design enquiry on our website/ad, that's why Sunrise Interiors is calling back, and reassure them their details are safe. Then continue.
-- "Not interested" / annoyed / busy: do NOT push. Warmly acknowledge, apologise for the interruption, offer to send details on WhatsApp instead, thank them, and end.
-- Interrupted? Stop immediately and listen.
-- Vague answer ("kuch renovation type")? Ask ONE short clarifying follow-up, then move on.
-- Never invent prices or promise anything you don't know — "our designer will cover the exact costing in the meeting."
-- Never loop or repeat. Once the slot is confirmed OR they want to end, close and hang up.
-
-# ENDING
-When the booking is confirmed, or the person wants to end: give a short warm goodbye and then END THE CALL immediately. No dead air, no lingering.`;
-
-const FIRST_MESSAGE =
-  "Hello ji! Main Ria bol rahi hoon, Sunrise Interiors Bengaluru se — aur haan, main ek AI assistant hoon. Kya main sahi vyakti se baat kar rahi hoon jinhone apne flat ke interiors ke liye enquiry ki thi? Abhi baat karne ka theek time hai?";
+// The agent prompt + first line live in lib/prompt.ts (single source of truth,
+// shared with the Bolna path). Inline assistant => no dashboard setup for Vapi.
 
 // Voice selection — must be a provider Vapi supports (NOTE: Sarvam is NOT a
 // Vapi voice provider; it's available on the Bolna path instead).
@@ -105,6 +106,23 @@ function buildAssistant() {
     silenceTimeoutSeconds: 20,
     endCallPhrases: ["goodbye", "bye bye", "take care", "have a great day"],
     endCallMessage: "Thank you, have a great day. Goodbye!",
+    // ---- Humanization + latency: natural turn-taking ----
+    // Smart endpointing lets the model detect when the caller has *finished*
+    // speaking (not just paused), so Ria replies fast without talking over
+    // them. This is also the "don't run STT/TTS continuously" control — audio
+    // is turned into a turn only on a real end-of-speech, not every fragment.
+    startSpeakingPlan: {
+      waitSeconds: 0.4, // brief, human beat before replying
+      smartEndpointingEnabled: true,
+    },
+    // Barge-in: if the caller starts talking, Ria stops immediately and listens.
+    stopSpeakingPlan: {
+      numWords: 1,
+      voiceSeconds: 0.2,
+      backoffSeconds: 1,
+    },
+    // Cleaner phone audio -> better STT -> fewer re-asks -> lower latency/cost.
+    backgroundDenoisingEnabled: true,
     // ---- P1: structured extraction + summary produced after the call ----
     analysisPlan: {
       summaryPlan: {
@@ -119,6 +137,18 @@ function buildAssistant() {
       },
       structuredDataPlan: {
         enabled: true,
+        // Extract even on very short calls (a 30s "not interested" still yields
+        // interested=false). Without this, short calls can return no structured
+        // data and the Qualification panel stays empty.
+        minMessagesThreshold: 1,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You extract structured qualification data from an interior-design callback. Return ONLY the schema fields, inferred from the transcript. If a field is unknown, omit it.",
+          },
+          { role: "user", content: "Transcript:\n{{transcript}}" },
+        ],
         schema: {
           type: "object",
           properties: {
@@ -237,6 +267,7 @@ export const vapiProvider: VoiceProvider = {
       status: mapStatus(c.status),
       endedReason: c.endedReason,
       transcript: c.artifact?.transcript ?? c.transcript,
+      turns: buildTurns(c),
       summary: c.analysis?.summary,
       structured,
       costUsd,

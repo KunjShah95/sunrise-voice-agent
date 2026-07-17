@@ -18,11 +18,17 @@ interface Structured {
   language?: string;
 }
 
+interface Turn {
+  role: "assistant" | "user";
+  text: string;
+}
+
 interface CallState {
   id: string;
   status: "queued" | "ringing" | "in-progress" | "ended" | "failed" | "unknown";
   endedReason?: string;
   transcript?: string;
+  turns?: Turn[];
   summary?: string;
   structured?: Structured;
   costUsd?: number;
@@ -49,14 +55,35 @@ export default function Home() {
   const [selected, setSelected] = useState(0);
   const [configured, setConfigured] = useState(true);
 
+  // Source of the number to dial: an allowlisted lead, or the visitor's own
+  // OTP-verified number.
+  const [mode, setMode] = useState<"lead" | "own">("lead");
+  const [verifyEnabled, setVerifyEnabled] = useState(false);
+  // Demo mode: dial a number typed straight in, no OTP (env-gated on server).
+  const [demoMode, setDemoMode] = useState(false);
+
+  // "Call my own number" (OTP) flow.
+  const [ownNumber, setOwnNumber] = useState("");
+  // Demo raw-dial: require an explicit consent tick before dialing a typed number.
+  const [consent, setConsent] = useState(false);
+  const [otpStep, setOtpStep] = useState<"enter" | "code" | "verified">("enter");
+  const [code, setCode] = useState("");
+  const [verifiedToken, setVerifiedToken] = useState<string | null>(null);
+  const [verifiedMasked, setVerifiedMasked] = useState<string>("");
+  const [otpBusy, setOtpBusy] = useState(false);
+
   const [calling, setCalling] = useState(false);
   const [call, setCall] = useState<CallState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  // Time from clicking dial to the call actually connecting (dial -> pickup).
+  // Doubles as the "call arrives within 10-15s" P0 proof.
+  const [connectMs, setConnectMs] = useState<number | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const endPollsRef = useRef(0);
+  const startedAtRef = useRef(0);
 
   useEffect(() => {
     fetch("/api/config")
@@ -65,6 +92,13 @@ export default function Home() {
         setNumbers(d.numbers || []);
         setProvider(d.provider || "");
         setConfigured(!!d.configured);
+        setVerifyEnabled(!!d.verify);
+        setDemoMode(!!d.demo);
+        // Lead with the "enter your number" path whenever it's available — that's
+        // the primary live-demo flow (client types their own number). Fall back
+        // to the allowlist tab only when self-serve isn't configured.
+        if (d.verify || d.demo) setMode("own");
+        else setMode("lead");
       })
       .catch(() => setConfigured(false));
   }, []);
@@ -86,6 +120,16 @@ export default function Home() {
           const d: CallState = await r.json();
           if (!r.ok) return;
           setCall(d);
+
+          // First moment the call is actually live -> record connect latency.
+          if (
+            (d.status === "in-progress" || d.status === "ringing") &&
+            startedAtRef.current
+          ) {
+            setConnectMs((prev) =>
+              prev === null ? Date.now() - startedAtRef.current : prev,
+            );
+          }
 
           if (d.status === "ended" || d.status === "failed") {
             // Call is over — but Vapi finalizes the cost + transcript + analysis
@@ -115,18 +159,80 @@ export default function Home() {
     [stopPolling],
   );
 
+  // --- OTP flow for "call my own number" ------------------------------------
+  async function sendCode() {
+    setError(null);
+    setOtpBusy(true);
+    try {
+      const res = await fetch("/api/verify/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ number: ownNumber }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not send the code");
+      setOtpStep("code");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not send the code");
+    } finally {
+      setOtpBusy(false);
+    }
+  }
+
+  async function verifyCode() {
+    setError(null);
+    setOtpBusy(true);
+    try {
+      const res = await fetch("/api/verify/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ number: ownNumber, code }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Verification failed");
+      setVerifiedToken(data.verifiedToken);
+      setVerifiedMasked(data.masked || "");
+      setOtpStep("verified");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Verification failed");
+    } finally {
+      setOtpBusy(false);
+    }
+  }
+
+  function resetOwn() {
+    setOtpStep("enter");
+    setCode("");
+    setVerifiedToken(null);
+    setVerifiedMasked("");
+    setError(null);
+  }
+
   async function startCall() {
     setError(null);
     setCall(null);
     setElapsed(0);
+    setConnectMs(null);
     setCalling(true);
     endPollsRef.current = 0;
+    startedAtRef.current = Date.now();
+
+    // Payload by path:
+    //  - lead        -> allowlist index
+    //  - own + demo  -> the typed number (DEMO_MODE gate on server)
+    //  - own + OTP   -> single-use verified token
+    const payload =
+      mode === "lead"
+        ? { index: selected }
+        : demoMode
+          ? { number: ownNumber }
+          : { verifiedToken };
 
     try {
       const res = await fetch("/api/call", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ index: selected }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to start call");
@@ -208,33 +314,173 @@ export default function Home() {
           </div>
 
           <div className="console-body">
-            <label className="lbl" htmlFor="lead">
-              Lead on the allowlist
-            </label>
-            <div className="select-wrap">
-              <select
-                id="lead"
-                value={selected}
-                onChange={(e) => setSelected(Number(e.target.value))}
-                disabled={calling || numbers.length === 0}
-              >
-                {numbers.length === 0 && <option>No numbers configured</option>}
-                {numbers.map((n) => (
-                  <option key={n.index} value={n.index}>
-                    {n.label} — {n.masked}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {(verifyEnabled || demoMode) && numbers.length > 0 && (
+              <div className="tabs" role="tablist">
+                <button
+                  className={`tab ${mode === "own" ? "on" : ""}`}
+                  role="tab"
+                  aria-selected={mode === "own"}
+                  onClick={() => setMode("own")}
+                  disabled={calling}
+                >
+                  Call my number
+                </button>
+                <button
+                  className={`tab ${mode === "lead" ? "on" : ""}`}
+                  role="tab"
+                  aria-selected={mode === "lead"}
+                  onClick={() => setMode("lead")}
+                  disabled={calling}
+                >
+                  Allowlisted lead
+                </button>
+              </div>
+            )}
 
-            <button
-              className="dial"
-              onClick={startCall}
-              disabled={calling || numbers.length === 0}
-            >
-              {calling ? "Placing the callback…" : "Place the callback"}
-              {!calling && <span className="arrow">→</span>}
-            </button>
+            {mode === "lead" && (
+              <>
+                <label className="lbl" htmlFor="lead">
+                  Lead on the allowlist
+                </label>
+                <div className="select-wrap">
+                  <select
+                    id="lead"
+                    value={selected}
+                    onChange={(e) => setSelected(Number(e.target.value))}
+                    disabled={calling || numbers.length === 0}
+                  >
+                    {numbers.length === 0 && (
+                      <option>No numbers configured</option>
+                    )}
+                    {numbers.map((n) => (
+                      <option key={n.index} value={n.index}>
+                        {n.label} — {n.masked}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  className="dial"
+                  onClick={startCall}
+                  disabled={calling || numbers.length === 0}
+                >
+                  {calling ? "Placing the callback…" : "Place the callback"}
+                  {!calling && <span className="arrow">→</span>}
+                </button>
+              </>
+            )}
+
+            {mode === "own" && (
+              <>
+                <label className="lbl" htmlFor="own">
+                  Your phone number
+                </label>
+                <input
+                  id="own"
+                  className="phone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="+91 98765 43210"
+                  value={ownNumber}
+                  onChange={(e) => {
+                    setOwnNumber(e.target.value);
+                    if (otpStep !== "enter") resetOwn();
+                  }}
+                  disabled={calling || (!demoMode && otpStep === "verified")}
+                />
+
+                {demoMode && (
+                  <>
+                    <label className="consent">
+                      <input
+                        type="checkbox"
+                        checked={consent}
+                        onChange={(e) => setConsent(e.target.checked)}
+                        disabled={calling}
+                      />
+                      <span>
+                        I have this person&apos;s consent to place an automated
+                        call to this number.
+                      </span>
+                    </label>
+                    <button
+                      className="dial"
+                      onClick={startCall}
+                      disabled={calling || ownNumber.trim().length < 8 || !consent}
+                    >
+                      {calling ? "Calling…" : "Call now"}
+                      {!calling && <span className="arrow">→</span>}
+                    </button>
+                  </>
+                )}
+
+                {!demoMode && otpStep === "enter" && (
+                  <button
+                    className="dial"
+                    onClick={sendCode}
+                    disabled={otpBusy || ownNumber.trim().length < 8}
+                  >
+                    {otpBusy ? "Sending code…" : "Send me a code"}
+                    {!otpBusy && <span className="arrow">→</span>}
+                  </button>
+                )}
+
+                {otpStep === "code" && (
+                  <>
+                    <label className="lbl" htmlFor="otp" style={{ marginTop: 18 }}>
+                      Enter the code we texted you
+                    </label>
+                    <input
+                      id="otp"
+                      className="phone"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="6-digit code"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      disabled={otpBusy}
+                    />
+                    <button
+                      className="dial"
+                      onClick={verifyCode}
+                      disabled={otpBusy || code.trim().length < 4}
+                    >
+                      {otpBusy ? "Verifying…" : "Verify number"}
+                      {!otpBusy && <span className="arrow">→</span>}
+                    </button>
+                    <button className="linkbtn" onClick={resetOwn} disabled={otpBusy}>
+                      Use a different number
+                    </button>
+                  </>
+                )}
+
+                {otpStep === "verified" && (
+                  <>
+                    <div className="verified-note">
+                      ✓ {verifiedMasked} verified — this is your number.
+                    </div>
+                    <button
+                      className="dial"
+                      onClick={startCall}
+                      disabled={calling}
+                    >
+                      {calling ? "Calling you…" : "Call me now"}
+                      {!calling && <span className="arrow">→</span>}
+                    </button>
+                    <button
+                      className="linkbtn"
+                      onClick={resetOwn}
+                      disabled={calling}
+                    >
+                      Use a different number
+                    </button>
+                  </>
+                )}
+              </>
+            )}
 
             <div className="guard">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -246,8 +492,19 @@ export default function Home() {
                 />
               </svg>
               <span>
-                Dials <b>only</b> allowlisted numbers, enforced server-side. The
-                page picks an index — never a raw number
+                {demoMode ? (
+                  <>
+                    <b>Demo mode</b> — dials the number you type (validated +
+                    rate-limited). Turn off <code>DEMO_MODE</code> in production;
+                    it then dials only allowlisted or OTP-verified numbers
+                  </>
+                ) : (
+                  <>
+                    Dials <b>only</b> allowlisted leads (picked by index) or a
+                    number you&apos;ve <b>verified by OTP</b> as your own —
+                    enforced server-side, never a raw number from the browser
+                  </>
+                )}
                 {provider && (
                   <>
                     {" · "}
@@ -276,7 +533,14 @@ export default function Home() {
                   ))}
                 </div>
 
-                {call.status === "queued" && (
+                {connectMs !== null && (
+                  <p className="hint connected">
+                    <span className="tick">✓</span> Connected in{" "}
+                    <b>{(connectMs / 1000).toFixed(1)}s</b>
+                    {connectMs <= 15000 && " — within the 10–15s window"}
+                  </p>
+                )}
+                {call.status === "queued" && connectMs === null && (
                   <p className="hint">
                     Placing the call — the phone should ring within ~10 seconds.
                   </p>
@@ -293,6 +557,43 @@ export default function Home() {
       {error && <div className="alert">{error}</div>}
 
       <div className="results">
+        {showResults && (
+          <div className="callmeta reveal">
+            <div className="metric">
+              <span className="ml">Connected in</span>
+              <span className="mv">
+                {connectMs !== null ? `${(connectMs / 1000).toFixed(1)}s` : "—"}
+              </span>
+            </div>
+            <div className="metric">
+              <span className="ml">Talk time</span>
+              <span className="mv">
+                {mm}:{ss}
+              </span>
+            </div>
+            <div className="metric">
+              <span className="ml">Cost</span>
+              <span className="mv accent">
+                {call?.costInr !== undefined
+                  ? `₹${call.costInr.toFixed(2)}`
+                  : "—"}
+              </span>
+            </div>
+            <div className="metric">
+              <span className="ml">Result</span>
+              <span className="mv">
+                {call?.status === "failed"
+                  ? "Failed"
+                  : s?.slot_confirmed
+                    ? "Booked"
+                    : s?.interested === false
+                      ? "Not interested"
+                      : "Completed"}
+              </span>
+            </div>
+          </div>
+        )}
+
         {showResults && s && (
           <div className="panel">
             <div className="panel-h">
@@ -359,12 +660,21 @@ export default function Home() {
                       `$${call?.costUsd?.toFixed(3)}`
                     )}
                   </div>
-                  {call?.costUsd !== undefined && (
-                    <div className="sub">
-                      ${call.costUsd.toFixed(3)} · billed by the provider,
-                      converted at the configured USD→INR rate
-                    </div>
-                  )}
+                  <div className="sub">
+                    {provider === "bolna" ? (
+                      <>
+                        Billed by Bolna in ₹ — Sarvam voice + Indian telephony
+                        (domestic). {call?.costUsd !== undefined && `≈ $${call.costUsd.toFixed(3)}`}
+                      </>
+                    ) : (
+                      call?.costUsd !== undefined && (
+                        <>
+                          ${call.costUsd.toFixed(3)} · billed by the provider,
+                          converted at the configured USD→INR rate
+                        </>
+                      )
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -382,23 +692,57 @@ export default function Home() {
           </div>
         )}
 
-        {showResults && call?.transcript && (
+        {showResults && (call?.turns?.length || call?.transcript) && (
           <div className="panel">
             <div className="panel-h">
               <span className="t">Transcript</span>
               <span className="n">verbatim</span>
             </div>
             <div className="panel-b">
-              <div className="transcript">{call.transcript}</div>
+              {call?.turns?.length ? (
+                <div className="chat">
+                  {call.turns.map((turn, i) => (
+                    <div key={i} className={`turn ${turn.role}`}>
+                      <span className="who">
+                        {turn.role === "assistant" ? "Ria" : "Customer"}
+                      </span>
+                      <span className="bubble">{turn.text}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="transcript">{call.transcript}</div>
+              )}
             </div>
           </div>
         )}
+
+        {showResults &&
+          !s &&
+          !call?.summary &&
+          !call?.turns?.length &&
+          !call?.transcript && (
+            <div className="panel">
+              <div className="panel-b empty">
+                {call?.status === "failed" ? (
+                  <>The call didn&apos;t connect, so there&apos;s no transcript to show.</>
+                ) : (
+                  <>
+                    Call ended. The provider is still finalising the transcript
+                    and analysis — this can take a few seconds after hang-up.
+                  </>
+                )}
+              </div>
+            </div>
+          )}
       </div>
 
       <footer className="foot">
-        This demo dials only consented, allowlisted numbers. Automated outbound
-        calls to Indian mobiles are regulated (TRAI / DLT) — see DECISIONS.md for
-        what would change before real-customer use.
+        {demoMode
+          ? "Demo mode is on — only call numbers you have consent to dial. "
+          : "This app dials only allowlisted or OTP-verified numbers. "}
+        Automated outbound calls to Indian mobiles are regulated (TRAI / DLT) —
+        see DECISIONS.md for what would change before real-customer use.
       </footer>
     </div>
   );

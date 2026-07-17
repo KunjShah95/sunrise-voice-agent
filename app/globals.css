@@ -28,8 +28,10 @@
   --shadow-md: 0 18px 40px -24px rgba(60, 34, 12, 0.45);
   --shadow-lg: 0 40px 90px -50px rgba(60, 34, 12, 0.55);
 
-  --font-display: "Fraunces", Georgia, serif;
-  --font-body: "Instrument Sans", system-ui, sans-serif;
+  /* Devanagari fallbacks (Nirmala UI on Windows, Noto on others) so Hindi
+     transcript turns render crisply, not as tofu/mojibake. */
+  --font-display: "Fraunces", Georgia, "Nirmala UI", "Noto Serif Devanagari", serif;
+  --font-body: "Instrument Sans", system-ui, "Nirmala UI", "Noto Sans Devanagari", sans-serif;
 }
 
 * {
@@ -259,6 +261,112 @@ body::before {
   padding: 26px 22px 24px;
 }
 
+/* ---- mode tabs (allowlisted lead | call my number) ---- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin: 0 0 22px;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.tab {
+  flex: 1;
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: transparent;
+  padding: 9px 10px;
+  border-radius: 9px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.tab.on {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.08));
+}
+.tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ---- text/tel inputs (own number + OTP) ---- */
+input.phone {
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--paper-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  padding: 14px 15px;
+  margin-bottom: 16px;
+  letter-spacing: 0.02em;
+}
+input.phone:focus {
+  outline: 2px solid rgba(233, 134, 47, 0.4);
+  outline-offset: 1px;
+}
+input.phone:disabled {
+  opacity: 0.7;
+}
+
+.consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  margin: 2px 0 16px;
+  cursor: pointer;
+}
+.consent input {
+  margin-top: 2px;
+  accent-color: var(--coral);
+  flex: none;
+}
+
+.verified-note {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--green, #2e7d52);
+  background: rgba(46, 125, 82, 0.08);
+  border: 1px solid rgba(46, 125, 82, 0.25);
+  border-radius: 10px;
+  padding: 11px 14px;
+  margin-bottom: 16px;
+}
+
+button.linkbtn {
+  display: block;
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  padding: 12px 0 2px;
+}
+button.linkbtn:hover:not(:disabled) {
+  color: var(--ink);
+}
+button.linkbtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 label.lbl {
   display: block;
   font-size: 11px;
@@ -480,6 +588,57 @@ button.dial:disabled {
   display: grid;
   gap: 22px;
 }
+
+/* at-a-glance metrics strip: connect latency · talk time · cost · result */
+.callmeta {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+.callmeta .metric {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 20px;
+  background: var(--paper);
+}
+.callmeta .ml {
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.callmeta .mv {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  line-height: 1;
+}
+.callmeta .mv.accent {
+  color: var(--amber);
+}
+@media (max-width: 620px) {
+  .callmeta {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.hint.connected {
+  color: var(--green);
+  font-weight: 600;
+}
+.hint.connected .tick {
+  margin-right: 4px;
+}
+.hint.connected b {
+  font-variant-numeric: tabular-nums;
+}
 .panel {
   background: var(--paper);
   border: 1px solid var(--line);
@@ -574,6 +733,63 @@ button.dial:disabled {
   color: var(--ink-2);
   max-height: 340px;
   overflow: auto;
+}
+
+/* ---- speaker-turn transcript ---- */
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 4px;
+}
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 84%;
+}
+.turn.assistant {
+  align-self: flex-start;
+}
+.turn.user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.turn .who {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.turn .bubble {
+  font-size: 14.5px;
+  line-height: 1.7; /* roomier — Devanagari has taller glyphs */
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  word-break: break-word;
+}
+
+.panel-b.empty {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  text-align: center;
+  padding: 30px 22px;
+}
+.turn.assistant .bubble {
+  background: var(--paper-2);
+  color: var(--ink);
+  border-bottom-left-radius: 4px;
+}
+.turn.user .bubble {
+  background: var(--dawn, #db4d2c);
+  color: #fff6ec;
+  border: 0;
+  border-bottom-right-radius: 4px;
 }
 
 .summary {
