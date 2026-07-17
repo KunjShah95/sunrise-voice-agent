@@ -137,10 +137,8 @@ function buildAssistant() {
       },
       structuredDataPlan: {
         enabled: true,
-        // Extract even on very short calls (a 30s "not interested" still yields
-        // interested=false). Without this, short calls can return no structured
-        // data and the Qualification panel stays empty.
-        minMessagesThreshold: 1,
+        // Explicit extraction messages steady the inference (omit-if-unknown),
+        // so short calls still populate the Qualification panel.
         messages: [
           {
             role: "system",
