@@ -34,6 +34,8 @@ export interface NormalizedCall {
   structured?: StructuredQualification;
   costUsd?: number;
   costInr?: number;
+  recordingUrl?: string; // URL to the call recording for verification
+  conversationDuration?: number; // duration in seconds
 }
 
 export interface VoiceProvider {

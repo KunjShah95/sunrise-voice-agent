@@ -33,6 +33,7 @@ interface CallState {
   structured?: Structured;
   costUsd?: number;
   costInr?: number;
+  manualFetch?: boolean; // Flag to indicate this was manually fetched, not from a live call
 }
 
 const STATE_LABEL: Record<string, string> = {
@@ -79,6 +80,10 @@ export default function Home() {
   // Time from clicking dial to the call actually connecting (dial -> pickup).
   // Doubles as the "call arrives within 10-15s" P0 proof.
   const [connectMs, setConnectMs] = useState<number | null>(null);
+
+  // Manual transcript fetch by execution ID
+  const [executionId, setExecutionId] = useState("");
+  const [fetchingManual, setFetchingManual] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -132,9 +137,9 @@ export default function Home() {
           }
 
           if (d.status === "ended" || d.status === "failed") {
-            // Call is over — but Vapi finalizes the cost + transcript + analysis
+            // Call is over — but Bolna finalizes the cost + transcript + analysis + recording
             // a few seconds AFTER the status flips to "ended". Unlock the UI now,
-            // but keep polling until the real cost/analysis land (or we give up),
+            // but keep polling until the real cost/analysis/recording land (or we give up),
             // otherwise the cost reads ₹0 and fields come back empty.
             setCalling(false);
             if (timerRef.current) {
@@ -146,8 +151,9 @@ export default function Home() {
             const haveCost =
               typeof d.costUsd === "number" && d.costUsd > 0;
             const haveReport = !!(d.transcript || d.summary || d.structured);
+            const haveRecording = !!d.recordingUrl;
 
-            if ((haveCost && haveReport) || endPollsRef.current >= 12) {
+            if ((haveCost && haveReport && haveRecording) || endPollsRef.current >= 15) {
               stopPolling();
             }
           }
@@ -252,8 +258,23 @@ export default function Home() {
     }
   }
 
+  async function fetchTranscriptByExecutionId() {
+    setError(null);
+    setFetchingManual(true);
+    try {
+      const res = await fetch(`/api/transcript?executionId=${encodeURIComponent(executionId)}`);
+      const data: CallState = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to fetch transcript");
+      setCall({ ...data, manualFetch: true });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to fetch transcript");
+    } finally {
+      setFetchingManual(false);
+    }
+  }
+
   const s = call?.structured;
-  const showResults = call?.status === "ended" || call?.status === "failed";
+  const showResults = call?.status === "ended" || call?.status === "failed" || call?.manualFetch;
   const live = call?.status === "in-progress";
   const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
   const ss = String(elapsed % 60).padStart(2, "0");
@@ -556,21 +577,64 @@ export default function Home() {
 
       {error && <div className="alert">{error}</div>}
 
+      <section className="stage reveal d4">
+        <div className="console">
+          <div className="console-head">
+            <span className="tag">Fetch existing transcript</span>
+            <span className="dots">
+              <i />
+              <i />
+              <i />
+            </span>
+          </div>
+
+          <div className="console-body">
+            <label className="lbl" htmlFor="exec-id">
+              Bolna execution ID
+            </label>
+            <input
+              id="exec-id"
+              className="phone"
+              type="text"
+              placeholder="15be8375-e327-4979-a2bd-0da8b1874b79"
+              value={executionId}
+              onChange={(e) => setExecutionId(e.target.value)}
+              disabled={fetchingManual}
+            />
+            <button
+              className="dial"
+              onClick={fetchTranscriptByExecutionId}
+              disabled={fetchingManual || executionId.trim().length === 0}
+            >
+              {fetchingManual ? "Fetching…" : "Fetch transcript"}
+              {!fetchingManual && <span className="arrow">→</span>}
+            </button>
+            <p className="hint">
+              Paste an execution ID from a previous Bolna call to retrieve its transcript and analysis.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <div className="results">
         {showResults && (
           <div className="callmeta reveal">
-            <div className="metric">
-              <span className="ml">Connected in</span>
-              <span className="mv">
-                {connectMs !== null ? `${(connectMs / 1000).toFixed(1)}s` : "—"}
-              </span>
-            </div>
-            <div className="metric">
-              <span className="ml">Talk time</span>
-              <span className="mv">
-                {mm}:{ss}
-              </span>
-            </div>
+            {!call?.manualFetch && (
+              <>
+                <div className="metric">
+                  <span className="ml">Connected in</span>
+                  <span className="mv">
+                    {connectMs !== null ? `${(connectMs / 1000).toFixed(1)}s` : "—"}
+                  </span>
+                </div>
+                <div className="metric">
+                  <span className="ml">Talk time</span>
+                  <span className="mv">
+                    {mm}:{ss}
+                  </span>
+                </div>
+              </>
+            )}
             <div className="metric">
               <span className="ml">Cost</span>
               <span className="mv accent">
@@ -692,19 +756,43 @@ export default function Home() {
           </div>
         )}
 
+        {showResults && call?.recordingUrl && (
+          <div className="panel">
+            <div className="panel-h">
+              <span className="t">Call Recording</span>
+              <span className="n">verify transcript</span>
+            </div>
+            <div className="panel-b">
+              <p style={{ marginBottom: 16, fontSize: 13, color: "#666" }}>
+                Listen to the actual call recording to verify the transcript accuracy:
+              </p>
+              <audio controls style={{ width: "100%", marginBottom: 12 }}>
+                <source src={call.recordingUrl} type="audio/mpeg" />
+                Your browser does not support the audio element.
+              </audio>
+              <p style={{ fontSize: 12, color: "#999" }}>
+                Duration: {call.conversationDuration ? `${Math.floor(call.conversationDuration / 60)}m ${call.conversationDuration % 60}s` : "—"}
+              </p>
+            </div>
+          </div>
+        )}
+
         {showResults && (call?.turns?.length || call?.transcript) && (
           <div className="panel">
             <div className="panel-h">
-              <span className="t">Transcript</span>
-              <span className="n">verbatim</span>
+              <span className="t">Complete Transcript</span>
+              <span className="n">full conversation</span>
             </div>
             <div className="panel-b">
+              <p style={{ marginBottom: 16, fontSize: 13, color: "#666" }}>
+                Below is the complete word-for-word conversation between Ria (AI assistant) and the customer. You can verify this transcript against the call recording above.
+              </p>
               {call?.turns?.length ? (
                 <div className="chat">
                   {call.turns.map((turn, i) => (
                     <div key={i} className={`turn ${turn.role}`}>
                       <span className="who">
-                        {turn.role === "assistant" ? "Ria" : "Customer"}
+                        {turn.role === "assistant" ? "🤖 Ria" : "👤 Customer"}
                       </span>
                       <span className="bubble">{turn.text}</span>
                     </div>
@@ -712,6 +800,11 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="transcript">{call.transcript}</div>
+              )}
+              {call?.turns?.length && (
+                <p style={{ marginTop: 16, fontSize: 12, color: "#999" }}>
+                  Total exchanges: {call.turns.length} • Transcript automatically generated and synced from call recording
+                </p>
               )}
             </div>
           </div>

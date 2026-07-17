@@ -197,6 +197,10 @@ export const bolnaProvider: VoiceProvider = {
       structured: mapExtracted(c.extracted_data ?? c.extraction),
       costUsd,
       costInr,
+      recordingUrl: c.telephony_data?.recording_url,
+      conversationDuration: typeof c.conversation_duration === "number"
+        ? Math.round(c.conversation_duration)
+        : undefined,
     };
   },
 };
