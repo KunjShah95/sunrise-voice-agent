@@ -1,13 +1,15 @@
 {
-  "name": "sunrise-voice-agent",
+  "name": "xplosiv-voice-agent",
   "version": "1.0.0",
   "private": true,
-  "description": "Live outbound voice-agent demo — calls an Indian lead back within seconds (Sunrise Interiors).",
+  "description": "Live outbound voice-agent demo — calls an Indian event lead back within seconds (X-Plosiv Events).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "bolna:tune": "node scripts/bolna-tune-agent.mjs",
+    "bolna:tune:dry": "node scripts/bolna-tune-agent.mjs --dry-run"
   },
   "dependencies": {
     "next": "^15.5.20",
