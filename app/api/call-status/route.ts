@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProvider } from "@/lib/providers";
+import { getCachedCall } from "@/lib/callCache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // If the Bolna completion webhook already pushed the finalized execution,
+    // serve it instantly — no polling race for cost/transcript/recording.
+    const cached = await getCachedCall(id);
+    if (cached) return NextResponse.json(cached);
+
     const provider = getProvider();
     const call = await provider.getCall(id);
     return NextResponse.json(call);

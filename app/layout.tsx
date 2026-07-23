@@ -16,9 +16,9 @@ const body = Instrument_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Sunrise Interiors — The Callback Engine",
+  title: "X-Plosiv Events — The Callback Engine",
   description:
-    "The lead is hot for five minutes. Sunrise Interiors calls back before they cool.",
+    "The lead is hot for five minutes. X-Plosiv Events calls back before they cool.",
 };
 
 export default function RootLayout({

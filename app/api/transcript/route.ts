@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProvider } from "@/lib/providers";
+import { getCachedCall } from "@/lib/callCache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // Prefer the webhook-pushed finalized execution if we have it cached.
+    const cached = await getCachedCall(executionId);
+    if (cached) return NextResponse.json(cached);
+
     const provider = getProvider();
     const call = await provider.getCall(executionId);
     return NextResponse.json(call);

@@ -84,15 +84,83 @@ function mapExtracted(data: any): StructuredQualification | undefined {
   const g = (k: string) => data[k];
   const out: StructuredQualification = {
     caller_is_right_person: g("caller_is_right_person") ?? g("right_person"),
-    need: g("need") ?? g("requirement") ?? g("interior_need"),
-    urgency: g("urgency") ?? g("timeline"),
-    slot_offered: g("slot_offered") ?? g("proposed_slot"),
-    slot_confirmed: g("slot_confirmed") ?? g("booking_confirmed"),
+    service: g("service") ?? g("occasion") ?? g("event_type") ?? g("need"),
+    event_date: g("event_date") ?? g("date") ?? g("when"),
+    guest_count: g("guest_count") ?? g("guests") ?? g("pax"),
+    location: g("location") ?? g("venue") ?? g("city"),
+    proposal_agreed:
+      g("proposal_agreed") ?? g("proposal_sent") ?? g("whatsapp_agreed"),
     interested: g("interested"),
     language: g("language"),
   };
   const hasAny = Object.values(out).some((v) => v !== undefined);
   return hasAny ? out : undefined;
+}
+
+// Normalize a raw Bolna execution object (from GET /executions/{id} OR a
+// completion webhook payload) into our provider-agnostic shape. Kept separate
+// from getCall so the webhook route can reuse the exact same mapping.
+export function normalizeBolnaExecution(c: any, fallbackId: string): NormalizedCall {
+  // Bolna bills in RUPEES. `total_cost` (= platform + network + llm +
+  // synthesizer + transcriber) is already in INR — verified against a live
+  // call: total_cost 3.75 for a 67s call = ~₹3.4/min, matching Bolna's Indian
+  // pricing (a $3.75/min USD reading would be absurd). So do NOT ×USD_TO_INR.
+  const costInr: number | undefined =
+    typeof c.total_cost === "number"
+      ? c.total_cost
+      : typeof c.cost === "number"
+        ? c.cost
+        : undefined;
+  // Derive a USD figure only for parity of display; INR is the billed unit.
+  const rate = Number(process.env.USD_TO_INR || "86");
+  const costUsd =
+    costInr !== undefined ? Math.round((costInr / rate) * 1000) / 1000 : undefined;
+
+  // Bolna transcript may be a string or an array of {role, content}.
+  let transcript: string | undefined;
+  let turns: TranscriptTurn[] | undefined;
+  if (typeof c.transcript === "string") {
+    transcript = c.transcript;
+    turns = parseTranscriptString(c.transcript);
+  } else if (Array.isArray(c.transcript)) {
+    transcript = c.transcript
+      .map((m: any) => `${m.role ?? m.speaker ?? "?"}: ${m.content ?? m.text ?? ""}`)
+      .join("\n");
+    turns = c.transcript
+      .map((m: any): TranscriptTurn | null => {
+        const r = (m.role ?? m.speaker ?? "").toString().toLowerCase();
+        const text = (m.content ?? m.text ?? "").toString().trim();
+        if (!text) return null;
+        const isUser = /user|customer|human|recipient/.test(r);
+        return { role: isUser ? "user" : "assistant", text };
+      })
+      .filter((t: TranscriptTurn | null): t is TranscriptTurn => t !== null);
+    if (turns && !turns.length) turns = undefined;
+  }
+
+  return {
+    id: String(c.id ?? fallbackId),
+    status: mapStatus(c.status),
+    endedReason: c.status,
+    transcript,
+    turns,
+    // Bolna has no top-level summary. Surface one from whichever shape the
+    // agent's extraction produces: a flat "summary" field, or Bolna's default
+    // nested General → "Call Summary" → subjective.
+    summary:
+      c.summary ??
+      c.extracted_data?.summary ??
+      c.extracted_data?.General?.["Call Summary"]?.subjective ??
+      c.extracted_data?.["Call Summary"]?.subjective,
+    structured: mapExtracted(c.extracted_data ?? c.extraction),
+    costUsd,
+    costInr,
+    recordingUrl: c.telephony_data?.recording_url,
+    conversationDuration:
+      typeof c.conversation_duration === "number"
+        ? Math.round(c.conversation_duration)
+        : undefined,
+  };
 }
 
 export const bolnaProvider: VoiceProvider = {
@@ -142,65 +210,6 @@ export const bolnaProvider: VoiceProvider = {
     }
 
     const c = (await res.json()) as any;
-
-    // Bolna bills in RUPEES. `total_cost` (= platform + network + llm +
-    // synthesizer + transcriber) is already in INR — verified against a live
-    // call: total_cost 3.75 for a 67s call = ~₹3.4/min, matching Bolna's Indian
-    // pricing (a $3.75/min USD reading would be absurd). So do NOT ×USD_TO_INR.
-    const costInr: number | undefined =
-      typeof c.total_cost === "number"
-        ? c.total_cost
-        : typeof c.cost === "number"
-          ? c.cost
-          : undefined;
-    // Derive a USD figure only for parity of display; INR is the billed unit.
-    const rate = Number(process.env.USD_TO_INR || "86");
-    const costUsd =
-      costInr !== undefined ? Math.round((costInr / rate) * 1000) / 1000 : undefined;
-
-    // Bolna transcript may be a string or an array of {role, content}.
-    let transcript: string | undefined;
-    let turns: TranscriptTurn[] | undefined;
-    if (typeof c.transcript === "string") {
-      transcript = c.transcript;
-      turns = parseTranscriptString(c.transcript);
-    } else if (Array.isArray(c.transcript)) {
-      transcript = c.transcript
-        .map((m: any) => `${m.role ?? m.speaker ?? "?"}: ${m.content ?? m.text ?? ""}`)
-        .join("\n");
-      turns = c.transcript
-        .map((m: any): TranscriptTurn | null => {
-          const r = (m.role ?? m.speaker ?? "").toString().toLowerCase();
-          const text = (m.content ?? m.text ?? "").toString().trim();
-          if (!text) return null;
-          const isUser = /user|customer|human|recipient/.test(r);
-          return { role: isUser ? "user" : "assistant", text };
-        })
-        .filter((t: TranscriptTurn | null): t is TranscriptTurn => t !== null);
-      if (turns && !turns.length) turns = undefined;
-    }
-
-    return {
-      id: String(c.id ?? id),
-      status: mapStatus(c.status),
-      endedReason: c.status,
-      transcript,
-      turns,
-      // Bolna has no top-level summary. Surface one from whichever shape the
-      // agent's extraction produces: a flat "summary" field, or Bolna's default
-      // nested General → "Call Summary" → subjective.
-      summary:
-        c.summary ??
-        c.extracted_data?.summary ??
-        c.extracted_data?.General?.["Call Summary"]?.subjective ??
-        c.extracted_data?.["Call Summary"]?.subjective,
-      structured: mapExtracted(c.extracted_data ?? c.extraction),
-      costUsd,
-      costInr,
-      recordingUrl: c.telephony_data?.recording_url,
-      conversationDuration: typeof c.conversation_duration === "number"
-        ? Math.round(c.conversation_duration)
-        : undefined,
-    };
+    return normalizeBolnaExecution(c, id);
   },
 };

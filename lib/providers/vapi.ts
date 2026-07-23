@@ -85,7 +85,7 @@ function buildAssistant() {
   const voice = buildVoice();
 
   return {
-    name: "Ria — Sunrise Interiors",
+    name: "Ria — X-Plosiv Events",
     firstMessage: FIRST_MESSAGE,
     // Deepgram nova-2 with "multi" handles Hindi+English code-switching.
     transcriber: {
@@ -130,7 +130,7 @@ function buildAssistant() {
           {
             role: "system",
             content:
-              "Summarise this interior-design qualification call in 2 short sentences: who they are, what they want, urgency, and whether a slot was booked.",
+              "Summarise this event-enquiry qualification call in 2 short sentences: who they are, which service/occasion they want, event date, guest count, location, and whether they agreed to a WhatsApp proposal.",
           },
           { role: "user", content: "Transcript:\n{{transcript}}" },
         ],
@@ -143,7 +143,7 @@ function buildAssistant() {
           {
             role: "system",
             content:
-              "You extract structured qualification data from an interior-design callback. Return ONLY the schema fields, inferred from the transcript. If a field is unknown, omit it.",
+              "You extract structured qualification data from an event-management callback for X-Plosiv Events. Return ONLY the schema fields, inferred from the transcript. If a field is unknown, omit it.",
           },
           { role: "user", content: "Transcript:\n{{transcript}}" },
         ],
@@ -154,21 +154,27 @@ function buildAssistant() {
               type: "boolean",
               description: "Was this the correct lead / person?",
             },
-            need: {
+            service: {
               type: "string",
-              description: "What interior work the lead wants done",
+              description:
+                "Service / occasion enquired: wedding, corporate event, exhibition, catering, farmhouse venue, printing, MICE, or gifting",
             },
-            urgency: {
+            event_date: {
               type: "string",
-              description: "How soon they want to start",
+              description: "Roughly when the event is",
             },
-            slot_offered: {
+            guest_count: {
               type: "string",
-              description: "The meeting slot the agent proposed",
+              description: "Approximate number of guests",
             },
-            slot_confirmed: {
+            location: {
+              type: "string",
+              description: "City / area / venue for the event",
+            },
+            proposal_agreed: {
               type: "boolean",
-              description: "Did the lead confirm the proposed slot?",
+              description:
+                "Did the lead agree to receive a proposal/quote on WhatsApp?",
             },
             interested: {
               type: "boolean",

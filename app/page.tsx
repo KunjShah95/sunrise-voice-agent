@@ -10,10 +10,11 @@ interface PublicNumber {
 
 interface Structured {
   caller_is_right_person?: boolean;
-  need?: string;
-  urgency?: string;
-  slot_offered?: string;
-  slot_confirmed?: boolean;
+  service?: string;
+  event_date?: string;
+  guest_count?: string;
+  location?: string;
+  proposal_agreed?: boolean;
   interested?: boolean;
   language?: string;
 }
@@ -33,6 +34,9 @@ interface CallState {
   structured?: Structured;
   costUsd?: number;
   costInr?: number;
+  recordingUrl?: string;
+  conversationDuration?: number;
+  error?: string;
   manualFetch?: boolean; // Flag to indicate this was manually fetched, not from a live call
 }
 
@@ -285,8 +289,8 @@ export default function Home() {
         <div className="mark">
           <span className="sun" aria-hidden />
           <div>
-            <div className="name">Sunrise Interiors</div>
-            <div className="place">Bengaluru · Interiors</div>
+            <div className="name">X-Plosiv Events</div>
+            <div className="place">Delhi · Event Management</div>
           </div>
         </div>
         <span className="status-chip">
@@ -305,12 +309,13 @@ export default function Home() {
         </div>
         <div className="reveal d3">
           <p className="lede">
-            A lead just enquired about doing up their new flat. They&apos;re hot
-            for about five minutes — then they&apos;ve filled three
-            competitors&apos; forms too. <b>Whoever calls first usually wins.</b>
+            A lead just enquired about an event — a wedding, a corporate do,
+            catering. They&apos;re hot for about five minutes — then they&apos;ve
+            filled three competitors&apos; forms too.{" "}
+            <b>Whoever calls first usually wins.</b>
           </p>
           <div className="count">
-            Our AI designer-assistant dials back in
+            Our AI event-assistant dials back in
             <strong>~10 seconds</strong>
           </div>
         </div>
@@ -648,8 +653,8 @@ export default function Home() {
               <span className="mv">
                 {call?.status === "failed"
                   ? "Failed"
-                  : s?.slot_confirmed
-                    ? "Booked"
+                  : s?.proposal_agreed
+                    ? "Proposal agreed"
                     : s?.interested === false
                       ? "Not interested"
                       : "Completed"}
@@ -675,20 +680,24 @@ export default function Home() {
                   <SpecVal value={s.interested} />
                 </div>
                 <div className="row">
-                  <span className="k">Need</span>
-                  <span className="v">{s.need || "—"}</span>
+                  <span className="k">Service / occasion</span>
+                  <span className="v">{s.service || "—"}</span>
                 </div>
                 <div className="row">
-                  <span className="k">Urgency</span>
-                  <span className="v">{s.urgency || "—"}</span>
+                  <span className="k">Event date</span>
+                  <span className="v">{s.event_date || "—"}</span>
                 </div>
                 <div className="row">
-                  <span className="k">Slot offered</span>
-                  <span className="v">{s.slot_offered || "—"}</span>
+                  <span className="k">Guest count</span>
+                  <span className="v">{s.guest_count || "—"}</span>
                 </div>
                 <div className="row">
-                  <span className="k">Slot confirmed</span>
-                  <SpecVal value={s.slot_confirmed} />
+                  <span className="k">Location</span>
+                  <span className="v">{s.location || "—"}</span>
+                </div>
+                <div className="row">
+                  <span className="k">Proposal agreed</span>
+                  <SpecVal value={s.proposal_agreed} />
                 </div>
                 <div className="row">
                   <span className="k">Language</span>
@@ -696,9 +705,11 @@ export default function Home() {
                 </div>
               </div>
 
-              {s.slot_confirmed && s.slot_offered && (
+              {s.proposal_agreed && (
                 <div style={{ marginTop: 20 }}>
-                  <span className="booking">📅 Booked — {s.slot_offered}</span>
+                  <span className="booking">
+                    📲 Proposal / quote to be sent on WhatsApp
+                  </span>
                 </div>
               )}
             </div>

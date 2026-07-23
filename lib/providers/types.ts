@@ -11,10 +11,11 @@ export type CallStatus =
 
 export interface StructuredQualification {
   caller_is_right_person?: boolean;
-  need?: string; // what interior work the lead wants
-  urgency?: string; // how soon they want to start
-  slot_offered?: string; // e.g. "Thursday 4 PM"
-  slot_confirmed?: boolean;
+  service?: string; // service/occasion enquired: wedding, corporate, catering, etc.
+  event_date?: string; // roughly when the event is
+  guest_count?: string; // approximate number of guests
+  location?: string; // city / area / venue
+  proposal_agreed?: boolean; // agreed to receive a WhatsApp proposal/quote
   interested?: boolean;
   language?: string; // hindi | hinglish | english
 }
